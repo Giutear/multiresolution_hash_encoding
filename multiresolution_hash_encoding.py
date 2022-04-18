@@ -1,11 +1,13 @@
 """Implements the Multiresolution Hash Encoding by NVIDIA."""
-from typing import List
 import torch
 from torch import nn
 import numpy as np
 
 
 class MultiresolutionHashEncoding(nn.Module):
+    '''
+    Implements the Multiresolution Hash Encoding by NVIDIA.
+    '''
     hash_table_size: int
     input_dim: int
     feature_dim: int
@@ -13,14 +15,23 @@ class MultiresolutionHashEncoding(nn.Module):
     N_min: int
     N_max: int
 
-    hash_tables: nn.Parameter
-    resolutions: List[torch.Tensor]
+    _hash_tables: nn.Parameter
+    _resolutions: nn.Parameter
 
-    _prime_numbers: torch.Tensor
-    _voxel_border_adds: torch.Tensor
+    _prime_numbers: nn.Parameter
+    _voxel_border_adds: nn.Parameter
 
     def __init__(self, hash_table_size: int, input_dim: int, feature_dim: int,
                  **kwargs):
+        '''
+        Args:
+            hash_table_size: The size of the hash tables.
+            input_dim: The dimension of the input dim. Must be less or equal to 7.
+            feature_dim: The dimension of the stored features per level.
+            levels: The number of resolutionis that will be generated.
+            N_min: The minimum resolution.
+            N_max: The maximum resolution.
+        '''
         super().__init__()
         assert input_dim <= 7, "hash encoding only supports up to 7 dimensions."
         self.hash_table_size = hash_table_size
@@ -30,10 +41,11 @@ class MultiresolutionHashEncoding(nn.Module):
         self.N_min = kwargs.get("N_min")
         self.N_max = kwargs.get("N_max")
 
+        # Calculate resolution as stated in the paper
         b = np.exp(
             (np.log(self.N_max) - np.log(self.N_min)) / (self.levels - 1))
 
-        self.resolutions = nn.Parameter(
+        self._resolutions = nn.Parameter(
             torch.from_numpy(
                 np.array([
                     np.floor(self.N_min * (b**i)) for i in range(self.levels)
@@ -41,7 +53,7 @@ class MultiresolutionHashEncoding(nn.Module):
                          dtype=np.int64)).reshape(1, 1, -1, 1), False)
 
         hash_table = torch.empty((self.levels, hash_table_size, feature_dim))
-        self.hash_tables = nn.Parameter(hash_table)
+        self._hash_tables = nn.Parameter(hash_table)
         #Taken from nvidia's tiny cuda nn implementation
         self._prime_numbers = nn.Parameter(
             torch.from_numpy(
@@ -49,7 +61,7 @@ class MultiresolutionHashEncoding(nn.Module):
                     1, 2654435761, 805459861, 3674653429, 2097192037,
                     1434869437, 2165219737
                 ])), False)
-
+        # This is a helper tensor which generates the voxel coordinates.
         border_adds = np.empty((self.input_dim, 2**self.input_dim),
                                dtype=np.int64)
         for i in range(self.input_dim):
@@ -61,9 +73,19 @@ class MultiresolutionHashEncoding(nn.Module):
             torch.from_numpy(border_adds).unsqueeze(0).unsqueeze(2), False)
 
     def forward(self, x: torch.Tensor):
+        '''
+        Takes a set of input vectors and encodes them.
+
+        Args:
+            x: A tensor of the shape (batch, input_dim) of all input vectors.
+
+        Returns:
+            A tensor of the shape (batch, levels * feature_dim)
+            containing the encoded input vectors.
+        '''
         # 1. Scale and get surrounding grid coords
         scaled_coords = torch.mul(
-            x.unsqueeze(-1).unsqueeze(-1), self.resolutions)
+            x.unsqueeze(-1).unsqueeze(-1), self._resolutions)
         grid_coords = torch.floor(scaled_coords).type(torch.int64)
         grid_coords = torch.add(grid_coords, self._voxel_border_adds)
         # 2. Hash the grid coords
@@ -71,12 +93,12 @@ class MultiresolutionHashEncoding(nn.Module):
         # 3. Look up the hashed indices
         looked_up = torch.empty(
             (x.shape[0], self.feature_dim, self.levels, 2**self.input_dim),
-            dtype=self.hash_tables.dtype,
+            dtype=self._hash_tables.dtype,
             device=x.device)
         for i in range(x.shape[0]):
             for j in range(self.levels):
-                looked_up[i, :, j] = self.hash_tables[j, hashed_indices[i,
-                                                                        j]].T
+                looked_up[i, :, j] = self._hash_tables[j, hashed_indices[i,
+                                                                         j]].T
         # 4. Interpolate features
         weights = torch.abs(
             torch.sub(scaled_coords, grid_coords.type(scaled_coords.dtype)))
@@ -85,6 +107,18 @@ class MultiresolutionHashEncoding(nn.Module):
                          axis=-1).reshape(x.shape[0], -1)
 
     def _fast_hash(self, x: torch.Tensor) -> torch.Tensor:
+        '''
+        Implements the hash function proposed by NVIDIA.
+
+        Args:
+            x: A tensor of the shape (batch, input_dim, levels, 2^input_dim).
+               This tensor should contain the vertices of the hyper cuber
+               for each level.
+
+        Returns:
+            A tensor of the shape (batch, levels, 2^input_dim) containing the
+            indices into the hash table for all vertices.
+        '''
         tmp = torch.zeros((x.shape[0], self.levels, 2**self.input_dim),
                           dtype=torch.int64,
                           device=x.device)
