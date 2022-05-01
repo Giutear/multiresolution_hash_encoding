@@ -54,6 +54,7 @@ class MultiresolutionHashEncoding(nn.Module):
 
         hash_table = torch.empty((self.levels, hash_table_size, feature_dim))
         self._hash_tables = nn.Parameter(hash_table)
+        nn.init.trunc_normal_(self._hash_tables, 0, 0.5)
         #Taken from nvidia's tiny cuda nn implementation
         self._prime_numbers = nn.Parameter(
             torch.from_numpy(
@@ -86,7 +87,10 @@ class MultiresolutionHashEncoding(nn.Module):
         # 1. Scale and get surrounding grid coords
         scaled_coords = torch.mul(
             x.unsqueeze(-1).unsqueeze(-1), self._resolutions)
-        grid_coords = torch.floor(scaled_coords).type(torch.int64)
+        if scaled_coords.dtype in [torch.float32, torch.float64]:
+            grid_coords = torch.floor(scaled_coords).type(torch.int64)
+        else:
+            grid_coords = scaled_coords
         grid_coords = torch.add(grid_coords, self._voxel_border_adds)
         # 2. Hash the grid coords
         hashed_indices = self._fast_hash(grid_coords)
