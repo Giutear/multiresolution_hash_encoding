@@ -99,10 +99,10 @@ class MultiresolutionHashEncoding(nn.Module):
             (x.shape[0], self.feature_dim, self.levels, 2**self.input_dim),
             dtype=self._hash_tables.dtype,
             device=x.device)
-        for i in range(x.shape[0]):
-            for j in range(self.levels):
-                looked_up[i, :, j] = self._hash_tables[j, hashed_indices[i,
-                                                                         j]].T
+        for j in range(self.levels):
+            looked_up[:, :,
+                      j] = self._hash_tables[j, hashed_indices[:, j]].permute(
+                          0, 2, 1)
         # 4. Interpolate features
         weights = torch.abs(
             torch.sub(scaled_coords, grid_coords.type(scaled_coords.dtype)))
