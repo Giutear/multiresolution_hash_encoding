@@ -54,7 +54,7 @@ class MultiresolutionHashEncoding(nn.Module):
 
         hash_table = torch.empty((self.levels, hash_table_size, feature_dim))
         self._hash_tables = nn.Parameter(hash_table)
-        nn.init.trunc_normal_(self._hash_tables, 0, 0.5)
+        nn.init.uniform_(self._hash_tables, -10.0**(-4), 10.0**(-4))
         #Taken from nvidia's tiny cuda nn implementation
         self._prime_numbers = nn.Parameter(
             torch.from_numpy(
@@ -98,7 +98,8 @@ class MultiresolutionHashEncoding(nn.Module):
         looked_up = torch.empty(
             (x.shape[0], self.feature_dim, self.levels, 2**self.input_dim),
             dtype=self._hash_tables.dtype,
-            device=x.device)
+            device=x.device,
+            requires_grad=True)
         for j in range(self.levels):
             looked_up[:, :,
                       j] = self._hash_tables[j, hashed_indices[:, j]].permute(
