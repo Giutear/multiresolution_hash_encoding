@@ -52,9 +52,14 @@ class MultiresolutionHashEncoding(nn.Module):
                 ],
                          dtype=np.int64)).reshape(1, 1, -1, 1), False)
 
-        hash_table = torch.empty((self.levels, hash_table_size, feature_dim))
-        self._hash_tables = nn.Parameter(hash_table)
-        nn.init.uniform_(self._hash_tables, -10.0**(-4), 10.0**(-4))
+        self._hash_tables = nn.ModuleList([
+            nn.Embedding(hash_table_size, feature_dim)
+            for _ in range(self.levels)
+        ])
+        for j in range(self.levels):
+            torch.nn.init.uniform_(self._hash_tables[j].weight, -10.0**(-4),
+                                   10.0**(-4))
+
         #Taken from nvidia's tiny cuda nn implementation
         self._prime_numbers = nn.Parameter(
             torch.from_numpy(
@@ -95,21 +100,18 @@ class MultiresolutionHashEncoding(nn.Module):
         # 2. Hash the grid coords
         hashed_indices = self._fast_hash(grid_coords)
         # 3. Look up the hashed indices
-        looked_up = torch.empty(
-            (x.shape[0], self.feature_dim, self.levels, 2**self.input_dim),
-            dtype=self._hash_tables.dtype,
-            device=x.device,
-            requires_grad=True)
-        for j in range(self.levels):
-            looked_up[:, :,
-                      j] = self._hash_tables[j, hashed_indices[:, j]].permute(
-                          0, 2, 1)
+        looked_up = torch.stack([
+            self._hash_tables[j](hashed_indices[:, j]).permute(0, 2, 1)
+            for j in range(self.levels)
+        ],
+                                dim=2)
         # 4. Interpolate features
-        weights = torch.abs(
+        weights = 1.0 - torch.abs(
             torch.sub(scaled_coords, grid_coords.type(scaled_coords.dtype)))
         weights = torch.prod(weights, axis=1).unsqueeze(1)
         return torch.sum(torch.mul(weights, looked_up),
-                         axis=-1).reshape(x.shape[0], -1)
+                         axis=-1).swapaxes(1, 2).reshape(x.shape[0], -1)
+        #return looked_up[:, :, :, 0].swapaxes(1, 2).reshape(x.shape[0], -1)
 
     def _fast_hash(self, x: torch.Tensor) -> torch.Tensor:
         '''
