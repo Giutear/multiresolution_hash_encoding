@@ -51,7 +51,7 @@ class MultiresolutionHashEncoding(nn.Module):
                     np.floor(self.N_min * (b**i)) for i in range(self.levels)
                 ],
                          dtype=np.int64)).reshape(1, 1, -1, 1), False)
-
+        # Generate the hash tables
         self._hash_tables = nn.ModuleList([
             nn.Embedding(hash_table_size, feature_dim)
             for _ in range(self.levels)
@@ -105,13 +105,12 @@ class MultiresolutionHashEncoding(nn.Module):
             for j in range(self.levels)
         ],
                                 dim=2)
-        # 4. Interpolate features
+        # 4. Interpolate features using multilinear interpolation
         weights = 1.0 - torch.abs(
             torch.sub(scaled_coords, grid_coords.type(scaled_coords.dtype)))
         weights = torch.prod(weights, axis=1).unsqueeze(1)
         return torch.sum(torch.mul(weights, looked_up),
                          axis=-1).swapaxes(1, 2).reshape(x.shape[0], -1)
-        #return looked_up[:, :, :, 0].swapaxes(1, 2).reshape(x.shape[0], -1)
 
     def _fast_hash(self, x: torch.Tensor) -> torch.Tensor:
         '''
@@ -132,5 +131,4 @@ class MultiresolutionHashEncoding(nn.Module):
         for i in range(self.input_dim):
             tmp = torch.bitwise_xor(x[:, i, :, :] * self._prime_numbers[i],
                                     tmp)
-        return torch.remainder(
-            tmp, torch.tensor(self.hash_table_size, dtype=torch.int64))
+        return torch.remainder(tmp, self.hash_table_size)
