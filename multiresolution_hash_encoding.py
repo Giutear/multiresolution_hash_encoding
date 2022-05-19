@@ -72,7 +72,7 @@ class MultiresolutionHashEncoding(nn.Module):
                                dtype=np.int64)
         for i in range(self.input_dim):
             pattern = np.array(
-                ([0] * (i + 1) + [1] * (i + 1)) * (self.input_dim // (i + 1)),
+                ([0] * (2**i) + [1] * (2**i)) * (2**(input_dim - i - 1)),
                 dtype=np.int64)
             border_adds[i, :] = pattern
         self._voxel_border_adds = nn.Parameter(
