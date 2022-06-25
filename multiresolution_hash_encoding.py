@@ -1,4 +1,5 @@
 """Implements the Multiresolution Hash Encoding by NVIDIA."""
+from typing import Tuple
 import torch
 from torch import nn
 import numpy as np
@@ -90,13 +91,7 @@ class MultiresolutionHashEncoding(nn.Module):
             containing the encoded input vectors.
         '''
         # 1. Scale and get surrounding grid coords
-        scaled_coords = torch.mul(
-            x.unsqueeze(-1).unsqueeze(-1), self._resolutions)
-        if scaled_coords.dtype in [torch.float32, torch.float64]:
-            grid_coords = torch.floor(scaled_coords).type(torch.int64)
-        else:
-            grid_coords = scaled_coords
-        grid_coords = torch.add(grid_coords, self._voxel_border_adds)
+        scaled_coords, grid_coords = self._scale_to_grid(x)
         # 2. Hash the grid coords
         hashed_indices = self._fast_hash(grid_coords)
         # 3. Look up the hashed indices
@@ -106,12 +101,36 @@ class MultiresolutionHashEncoding(nn.Module):
         ],
                                 dim=2)
         # 4. Interpolate features using multilinear interpolation
+        return self._interpolate(scaled_coords, grid_coords, looked_up)
+
+    @staticmethod
+    def _interpolate(scaled_coords: torch.Tensor, grid_coords: torch.Tensor,
+                     features: torch.Tensor) -> torch.Tensor:
+        '''
+        Uses multilinear interpolation to interpolate the voxel vertex features
+        into a single feature for the given scaled input.
+        '''
         weights = 1.0 - torch.abs(
             torch.sub(scaled_coords, grid_coords.type(scaled_coords.dtype)))
         weights = torch.prod(weights, axis=1).unsqueeze(1)
-        return torch.sum(torch.mul(weights, looked_up),
-                         axis=-1).swapaxes(1, 2).reshape(x.shape[0], -1)
+        return torch.sum(torch.mul(weights, features),
+                         axis=-1).swapaxes(1,
+                                           2).reshape(features.shape[0], -1)
 
+    @torch.no_grad()
+    def _scale_to_grid(self,
+                       x: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+        '''
+        Scales the inputs into a set of grids and returns the scaled coordinate
+        as well as the coordinate of all voxel vertices for the input at all scales.
+        '''
+        scaled_coords = torch.mul(
+            x.unsqueeze(-1).unsqueeze(-1), self._resolutions)
+        grid_coords = torch.floor(scaled_coords).type(torch.int64)
+        grid_coords = torch.add(grid_coords, self._voxel_border_adds)
+        return scaled_coords, grid_coords
+
+    @torch.no_grad()
     def _fast_hash(self, x: torch.Tensor) -> torch.Tensor:
         '''
         Implements the hash function proposed by NVIDIA.
