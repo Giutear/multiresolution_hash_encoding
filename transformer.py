@@ -12,11 +12,11 @@ class ContextTransformer(nn.Module):
     def __init__(self,
                  f_dim: int,
                  num_heads: int,
-                 min_res: float,
+                 res: int,
                  hashtable_size: int = 2**12) -> None:
         super().__init__()
         self.attention = ContextMultiheadAttention(f_dim, num_heads,
-                                                   hashtable_size, min_res)
+                                                   hashtable_size, res)
         self.pre_norm = nn.LayerNorm(f_dim)
         self.post_transform = nn.ModuleList(
             [nn.LayerNorm(f_dim), nn.Linear(f_dim, f_dim)])

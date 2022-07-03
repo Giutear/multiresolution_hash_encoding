@@ -12,7 +12,7 @@ class cRPEncoding(nn.Module):
                  dimension: int,
                  num_heads: int,
                  hashtable_size: int = 2**12,
-                 min_res: float = 0.05) -> None:
+                 res: float = 1e7) -> None:
         super().__init__()
         self.num_heads = num_heads
         self.dimension = dimension
@@ -22,7 +22,7 @@ class cRPEncoding(nn.Module):
                                         feature_dim=2,
                                         levels=dimension // 2,
                                         N_min=1,
-                                        N_max=int(1.0 / min_res))
+                                        N_max=res)
             for _ in range(3 * num_heads)
         ])
 
@@ -49,7 +49,7 @@ class ContextMultiheadAttention(nn.Module):
                  dimension: int,
                  num_heads: int,
                  hashtable_size: int = 2**12,
-                 min_res: float = 0.05,
+                 res: float = 1e7,
                  use_bias: bool = False) -> None:
         super().__init__()
         self.num_heads = num_heads
@@ -57,7 +57,7 @@ class ContextMultiheadAttention(nn.Module):
         self.total_dim = dimension
 
         self.encoding = cRPEncoding(self.dimension, num_heads, hashtable_size,
-                                    min_res)
+                                    res)
 
         self.q = nn.Linear(self.total_dim, self.total_dim, bias=use_bias)
         self.kv = nn.Linear(self.total_dim, 2 * self.total_dim, bias=use_bias)
