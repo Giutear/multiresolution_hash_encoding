@@ -45,6 +45,10 @@ class MultiresolutionHashEncoding(nn.Module):
         # Calculate resolution as stated in the paper
         b = np.exp(
             (np.log(self.N_max) - np.log(self.N_min)) / (self.levels - 1))
+        if b > 2 or b <= 1:
+            print(
+                f"The between level scale is recommended to be <= 2 and needs to be > 1 but was {b:.4f}."
+            )
 
         self._resolutions = nn.Parameter(
             torch.from_numpy(
@@ -57,9 +61,8 @@ class MultiresolutionHashEncoding(nn.Module):
             nn.Embedding(hash_table_size, feature_dim)
             for _ in range(self.levels)
         ])
-        for j in range(self.levels):
-            torch.nn.init.uniform_(self._hash_tables[j].weight, -10.0**(-4),
-                                   10.0**(-4))
+
+        self.apply_init(nn.init.uniform_, -10.0**(-4), 10.0**(-4))
 
         #Taken from nvidia's tiny cuda nn implementation
         self._prime_numbers = nn.Parameter(
@@ -78,6 +81,10 @@ class MultiresolutionHashEncoding(nn.Module):
             border_adds[i, :] = pattern
         self._voxel_border_adds = nn.Parameter(
             torch.from_numpy(border_adds).unsqueeze(0).unsqueeze(2), False)
+
+    def apply_init(self, init_func, *args):
+        for j in range(self.levels):
+            init_func(self._hash_tables[j].weight, *args)
 
     def forward(self, x: torch.Tensor):
         '''
